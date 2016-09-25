@@ -83,7 +83,8 @@ class KMeansClusterer
     def to_s
       to_a.to_s
     end
-
+    
+    
     def dimension
       @data.length
     end
@@ -172,6 +173,7 @@ class KMeansClusterer
     @scale_data = opts[:scale_data]
     @typecode = TYPECODE[opts[:float_precision] || :double]
     @max_iter = opts[:max_iter]
+    @max_points_in_a_cluster = (@points_count/@k).to_i
 
     init_centroids
   end
@@ -181,7 +183,6 @@ class KMeansClusterer
     @iterations, @runtime = 0, 0
     @cluster_assigns = NArray.int(@points_count)
     min_distances = NArray.new(@typecode, @points_count)
-
     loop do
       @iterations +=1
 
@@ -200,12 +201,13 @@ class KMeansClusterer
       @k.times do |cluster_id|
         centroid = NArray.ref(@centroids[true, cluster_id].flatten)
         point_ids = @cluster_assigns.eq(cluster_id).where
-
+        
         unless point_ids.empty?
           points = @data[true, point_ids]
           newcenter = points.mean(1)
           move = Distance.euclidean(centroid, newcenter)
           max_move = move if move > max_move
+          #@max_points_in_a_cluster
           @centroids[true, cluster_id] = newcenter
         end
       end
@@ -220,6 +222,7 @@ class KMeansClusterer
   end
 
   def finish
+    unused_points = []
     @clusters = @k.times.map do |i|
       centroid = NArray.ref @centroids[true, i].flatten
       Cluster.new i, Point.new(-1, centroid, nil, nil)
@@ -229,12 +232,39 @@ class KMeansClusterer
       data = NArray.ref @data[true, i].flatten
       point = Point.new(i, data, @distances[i, true], @labels[i])
       cluster = @clusters[@cluster_assigns[i]]
-      cluster << point
+      #if cluster.points.count < @max_points_in_a_cluster
+        cluster << point
+      #else
+      #  unused_points << point
+      #end
       point
     end
-
+    
+    #unused_points.each do |point|
+    #  
+    #end
+    
+    
     @clusters.each do |c| 
       c.points.sort_by! &:centroid_distance
+    end
+    
+    0.upto(40) do
+      @clusters.each do |clust|
+        to_be_deleted=[]
+        if clust.points.count > @max_points_in_a_cluster
+          max = clust.points.count-1
+          (@max_points_in_a_cluster).upto(max) do |i|
+            p i
+            p clust.points.count
+            next_cluster = predict [clust.points[i].data]
+            cluster = @clusters[next_cluster[0]]
+            cluster << clust.points[i]
+            to_be_deleted << i
+          end
+          to_be_deleted.each {|i| clust.points.delete_at(i)}
+        end
+      end
     end
 
     self
@@ -245,7 +275,7 @@ class KMeansClusterer
     data, _m, _s = Scaler.scale(data, @mean, @std, @typecode) if @scale_data
     distances = Distance.euclidean(@centroids, data)
     data.shape[1].times.map do |i|
-      distances[i, true].sort_index[0] # index of closest cluster
+      distances[i, true].sort_index[1] # index of closest cluster
     end
   end
 
