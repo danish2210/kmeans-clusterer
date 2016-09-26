@@ -18,6 +18,8 @@ class KMeansClusterer
       x.is_a?(NArray) ? x : NArray.cast(x, typecode)
     end
   end
+  [ [ 32.2909, -87.8799 ], [ 33.209, -85.7719 ], [ 31.6497, -86.012 ], [ 34.1931, -86.8009 ] ]
+
 
   module Scaler
     def self.mean data
@@ -222,12 +224,11 @@ class KMeansClusterer
   end
 
   def finish
-    unused_points = []
     @clusters = @k.times.map do |i|
       centroid = NArray.ref @centroids[true, i].flatten
       Cluster.new i, Point.new(-1, centroid, nil, nil)
     end
-
+    
     @points = @points_count.times.map do |i|
       data = NArray.ref @data[true, i].flatten
       point = Point.new(i, data, @distances[i, true], @labels[i])
@@ -240,42 +241,127 @@ class KMeansClusterer
       point
     end
     
-    #unused_points.each do |point|
-    #  
-    #end
+    #@points
     
     
     @clusters.each do |c| 
       c.points.sort_by! &:centroid_distance
     end
-    
-    0.upto(40) do
-      @clusters.each do |clust|
-        to_be_deleted=[]
-        if clust.points.count > @max_points_in_a_cluster
-          max = clust.points.count-1
-          (@max_points_in_a_cluster).upto(max) do |i|
-            p i
-            p clust.points.count
-            next_cluster = predict [clust.points[i].data]
-            cluster = @clusters[next_cluster[0]]
-            cluster << clust.points[i]
-            to_be_deleted << i
+    0.upto(8) do
+    @clusters.each do |cluster|
+      if cluster.points.count > @max_points_in_a_cluster
+        original_indexes = []
+        @max_points_in_a_cluster.upto((cluster.points.size-1)) do |point_index|
+          extra_point = cluster.sorted_points[point_index]
+          new_centroids = @centroids.to_a.reject{|x| x == cluster.centroid.data}
+          next_clust_predict = predict [extra_point.data], NMatrix.cast(new_centroids, NArray::DFLOAT)
+          next_cluster = @clusters[next_clust_predict[0][1][0]]
+          if next_cluster.points.count < @max_points_in_a_cluster
+            next_cluster << extra_point
+            original_indexes << cluster.points.to_a.index{|x| x.id==extra_point.id}
           end
-          to_be_deleted.each {|i| clust.points.delete_at(i)}
         end
+        original_indexes.each {|ind| cluster.points.delete_at(ind)}
       end
+      
     end
+  end
+    
+    #@points.each do |point|
+    #  next_cluster_id = predict [point.data]
+    #  @k.times.map do |id|
+    #    if @clusters[next_cluster_id[0][id][0]].points.count < @max_points_in_a_cluster
+    #      cluster = @clusters[next_cluster_id[0][id][0]]
+    #      cluster << point
+    #    end
+    #  end
+    #end
+    #
+    ###0.upto(256) do
+    #  @clusters.each do |clust|
+    #    max = clust.points.count-1
+    #    0.upto(max) do |i|
+    #      p "loop"
+    #      next_cluster_id = predict [clust.points[i].data]
+    #      if next_cluster_id[0][0][0] != clust.id.to_i
+    #        new_clust = @clusters[next_cluster_id[0][0][0]]
+    #        0.upto(max) do |new_i|
+    #          p " inner loop 2"
+    #          next_clust_predict = predict [new_clust.points[new_i].data]
+    #          if next_clust_predict[0][0][0] == clust.id.to_i
+    #            p "most inner loop"
+    #            temp = clust.points[i]
+    #            clust.points.delete_at(i)
+    #            new_clust.points << temp
+    #            temp = new_clust.points[new_i]
+    #            new_clust.points.delete_at(new_i)
+    #            clust.points << temp
+    #            
+    #          #elsif next_clust_predict[0][1][0] == clust.id.to_i
+    #          #  p "most inner loop 2"
+    #          #  temp = clust.points[i]
+    #          #  clust.points.delete_at(i)
+    #          #  new_clust.points << temp
+    #          #  temp = new_clust.points[new_i]
+    #          #  new_clust.points.delete_at(new_i)
+    #          #  clust.points << temp
+    #          #  break
+    #          #elsif next_clust_predict[0][2][0] == clust.id.to_i
+    #          #  p "most inner loop 2"
+    #          #  temp = clust.points[i]
+    #          #  clust.points.delete_at(i)
+    #          #  new_clust.points << temp
+    #          #  temp = new_clust.points[new_i]
+    #          #  new_clust.points.delete_at(new_i)
+    #          #  clust.points << temp
+    #          #  break
+    #          #elsif next_clust_predict[0][3][0] == clust.id.to_i
+    #          #  p "most inner loop 2"
+    #          #  temp = clust.points[i]
+    #          #  clust.points.delete_at(i)
+    #          #  new_clust.points << temp
+    #          #  temp = new_clust.points[new_i]
+    #          #  new_clust.points.delete_at(new_i)
+    #          #  clust.points << temp
+    #          #  break
+    #          end
+    #        end
+    #        
+    #        
+    #      end
+    #      
+    #    end
+    #  end
+      
+      
+    #end
 
     self
   end
+  
+  def distance loc1, loc2
+    rad_per_deg = Math::PI/180  # PI / 180
+    rkm = 6371                  # Earth radius in kilometers
+    rm = rkm * 1000             # Radius in meters
+  
+    dlat_rad = (loc2[0]-loc1[0]) * rad_per_deg  # Delta, converted to rad
+    dlon_rad = (loc2[1]-loc1[1]) * rad_per_deg
+  
+    lat1_rad, lon1_rad = loc1.map {|i| i * rad_per_deg }
+    lat2_rad, lon2_rad = loc2.map {|i| i * rad_per_deg }
+  
+    a = Math.sin(dlat_rad/2)**2 + Math.cos(lat1_rad) * Math.cos(lat2_rad) * Math.sin(dlon_rad/2)**2
+    c = 2 * Math::atan2(Math::sqrt(a), Math::sqrt(1-a))
+  
+    rm * c # Delta in meters
+  end
 
-  def predict data
+  def predict data,centroids
     data = Utils.ensure_matrix data, @typecode
     data, _m, _s = Scaler.scale(data, @mean, @std, @typecode) if @scale_data
-    distances = Distance.euclidean(@centroids, data)
+    distances = Distance.euclidean(centroids, data)
     data.shape[1].times.map do |i|
-      distances[i, true].sort_index[1] # index of closest cluster
+      distances[i, true].sort_index.to_a # index of closest cluster
     end
   end
 
